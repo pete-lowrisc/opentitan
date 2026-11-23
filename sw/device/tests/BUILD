@@ -2463,6 +2463,85 @@ opentitan_test(
     ],
 )
 
+# KeyMgr DPE Seed Test
+# Test values for the OTP - known values
+OTP_KEYMGR_TEST_DEVID = "526b016f2499f77d23f2338d445987ae45d02a00bde464b3f6b732cca3b43fef"
+OTP_KEYMGR_TEST_CREATOR_ROOT_KEY_SHARE0 = "94b49efff8af5fe4431bd38e115d84b33401e0c3caf9d2313fb98d11e2f08a64"
+OTP_KEYMGR_TEST_CREATOR_ROOT_KEY_SHARE1 = "2cb7fca838cc85199c3c61b5a9e5f49c0f7ab0d205c2951fc50e7c59e91ced62"
+
+otp_json(
+    name = "otp_json_keymgr_dpe_seed_test",
+    partitions = [
+        otp_partition(
+            name = "HW_CFG0",
+            items = {
+                "DEVICE_ID": OTP_KEYMGR_TEST_DEVID,
+            },
+            lock = True,    # Generate digest
+        ),
+        otp_partition(
+            name = "SECRET2",
+            items = {
+                "RMA_TOKEN": "<random>",
+                "CREATOR_ROOT_KEY_SHARE0": OTP_KEYMGR_TEST_CREATOR_ROOT_KEY_SHARE0, 
+                "CREATOR_ROOT_KEY_SHARE1": OTP_KEYMGR_TEST_CREATOR_ROOT_KEY_SHARE1,
+            },
+            lock = False,    # No digest
+        ),
+    ],
+)
+
+otp_image(
+    name = "img_rma_keymgr_dpe_test",
+    src = "//hw/top_earlgrey/data/otp:otp_json_rma",
+    overlays = STD_OTP_OVERLAYS + [":otp_json_keymgr_dpe_seed_test"],
+    visibility = ["//visibility:private"],
+)
+
+opentitan_test(
+    name = "keymgr_dpe_seed_test",
+    srcs = ["keymgr_dpe_seed_test.c"],
+    exec_env = dicts.add(
+        EARLGREY_TEST_ENVS,
+        {
+            # This test is not supported by the silicon_owner_sival_rom_ext
+            # configuration.
+            "//hw/top_earlgrey:silicon_creator": None,
+        },
+    ),
+    qemu = qemu_params(
+        globals = {
+            # Test uses rstmgr, keep running on fatal resets:
+            "ot-rstmgr.fatal_reset": 0,
+        },
+    ),
+    # Run in both Owner and non-Owner envs to test the keymgr initialization
+    run_in_ci = [
+        "//hw/top_earlgrey:fpga_cw340_sival_rom_ext",
+        "//hw/top_earlgrey:fpga_cw340_rom_with_fake_keys",
+    ],
+    verilator = verilator_params(
+        otp=":img_rma_keymgr_dpe_test",        
+        timeout = "eternal"
+    ),
+    deps = [
+        "//hw/top/dt",
+        "//sw/device/lib/arch:device",
+        "//sw/device/lib/base:macros",
+        "//sw/device/lib/dif:keymgr_dpe",
+        "//sw/device/lib/dif:kmac",
+        "//sw/device/lib/dif:rom_ctrl",
+        "//sw/device/lib/runtime:hart",
+        "//sw/device/lib/runtime:log",
+        "//sw/device/lib/runtime:print",
+        "//sw/device/lib/testing:keymgr_dpe_testutils",
+        "//sw/device/lib/testing/test_framework:check",
+        "//sw/device/lib/testing/test_framework:ottf_main",
+        "//sw/device/lib/testing:kmac_testutils",
+        "//sw/device/lib/testing:otp_ctrl_testutils",
+    ],
+)
+
 opentitan_test(
     name = "keymgr_dpe_otbn_hkdf_smoketest",
     srcs = ["keymgr_dpe_otbn_hkdf_smoketest.c"],
